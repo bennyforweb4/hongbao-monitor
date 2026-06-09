@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>红包监控</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0d0d0d;color:#e0e0e0;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Header ── */
+.hdr{background:#111827;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1f2937;flex-shrink:0}
+.hdr-left{display:flex;align-items:center;gap:14px}
+.hdr h1{font-size:18px;font-weight:700;color:#fff;letter-spacing:-.01em}
+.user-chip{font-size:12px;color:#6b7280;background:#1f2937;padding:3px 10px;border-radius:20px}
+.hdr-right{display:flex;align-items:center;gap:10px}
+.status-badge{display:flex;align-items:center;gap:7px;font-size:13px;color:#9ca3af}
+.dot{width:8px;height:8px;border-radius:50%;background:#374151;flex-shrink:0}
+.dot.on{background:#22c55e;box-shadow:0 0 8px #22c55e80}
+.dot.off{background:#ef4444}
+
+/* ── Layout ── */
+.body{flex:1;display:flex;overflow:hidden}
+.sidebar{width:210px;background:#111;border-right:1px solid #1f2937;padding:16px 0;flex-shrink:0;overflow-y:auto}
+.nav-section{padding:0 12px 12px}
+.nav-label{font-size:10px;color:#4b5563;text-transform:uppercase;letter-spacing:.08em;padding:0 6px;margin-bottom:6px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13.5px;color:#9ca3af;transition:all .15s;user-select:none}
+.nav-item:hover{background:#1f2937;color:#e5e7eb}
+.nav-item.active{background:#1e3a5f;color:#60a5fa}
+.nav-icon{font-size:15px;width:18px;text-align:center}
+.content{flex:1;overflow-y:auto;padding:24px}
+
+/* ── Cards ── */
+.panel{display:none;max-width:740px}
+.panel.active{display:block}
+.card{background:#161616;border:1px solid #1f2937;border-radius:10px;padding:20px;margin-bottom:16px}
+.card h2{font-size:14px;font-weight:600;color:#f9fafb;margin-bottom:4px}
+.card .sub{font-size:12.5px;color:#6b7280;margin-bottom:16px;line-height:1.5}
+
+/* ── Forms ── */
+label{display:block;font-size:12px;color:#9ca3af;margin-bottom:5px}
+input[type=text],input[type=password]{width:100%;background:#0d0d0d;border:1px solid #374151;border-radius:7px;padding:9px 12px;color:#e5e7eb;font-size:13.5px;outline:none;transition:border-color .15s}
+input:focus{border-color:#3b82f6}
+.form-row{margin-bottom:14px}
+
+/* ── Buttons ── */
+.btn{padding:8px 16px;border-radius:7px;border:none;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-primary{background:#2563eb;color:#fff}.btn-primary:hover:not(:disabled){background:#1d4ed8}
+.btn-success{background:#16a34a;color:#fff}.btn-success:hover:not(:disabled){background:#15803d}
+.btn-danger{background:#dc2626;color:#fff}.btn-danger:hover:not(:disabled){background:#b91c1c}
+.btn-ghost{background:#1f2937;color:#e5e7eb}.btn-ghost:hover:not(:disabled){background:#374151}
+.btn-sm{padding:5px 11px;font-size:12px}
+.btn-xs{padding:3px 8px;font-size:11px}
+
+/* ── Tags ── */
+.tag-box{display:flex;flex-wrap:wrap;gap:6px;min-height:38px;background:#0d0d0d;border:1px solid #374151;border-radius:7px;padding:7px;margin-bottom:8px}
+.tag{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:5px;font-size:12.5px}
+.tag-group{background:#1e3a5f;color:#93c5fd}
+.tag-kw{background:#1e3050;color:#7dd3fc}
+.tag-block{background:#3b1515;color:#fca5a5}
+.tag-btn{background:#1a3320;color:#6ee7b7}
+.tag-x{cursor:pointer;opacity:.55;font-size:15px;line-height:1}.tag-x:hover{opacity:1}
+.add-row{display:flex;gap:7px}.add-row input{flex:1}
+
+/* ── Group picker ── */
+.glist{background:#0d0d0d;border:1px solid #374151;border-radius:7px;max-height:220px;overflow-y:auto;margin-top:10px}
+.gitem{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-bottom:1px solid #1a1a1a;gap:8px}
+.gitem:last-child{border-bottom:none}
+.gname{font-size:13px;color:#e5e7eb}
+.gid{font-size:11px;color:#4b5563;margin-top:1px}
+
+/* ── Logs ── */
+.log-wrap{background:#0a0a0a;border:1px solid #1f2937;border-radius:8px;height:calc(100vh - 165px);overflow-y:auto;padding:10px 14px;font-family:'Menlo','Monaco',monospace;font-size:12px}
+.log-row{padding:1px 0;line-height:1.6}
+.lt{color:#4b5563;margin-right:6px}
+.lI{color:#60a5fa}.lW{color:#fbbf24}.lE{color:#f87171}.lD{color:#6b7280}
+
+/* ── Alert ── */
+.alert{padding:10px 14px;border-radius:7px;margin-bottom:12px;font-size:13px}
+.alert-err{background:#1f0000;border:1px solid #7f1d1d;color:#fca5a5}
+.alert-ok{background:#001a0a;border:1px solid #14532d;color:#86efac}
+
+/* ── Auth ── */
+#auth-view{display:none;flex:1;overflow-y:auto;padding:40px 24px;align-items:flex-start;justify-content:center}
+.auth-wrap{width:100%;max-width:420px}
+.auth-title{text-align:center;margin-bottom:32px}
+.auth-title h1{font-size:26px;color:#fff}
+.auth-title p{color:#6b7280;margin-top:8px;font-size:13px}
+.step{display:none}.step.active{display:block}
+.save-msg{font-size:12px;color:#4ade80;margin-left:10px;display:none}
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#1f2937;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#374151}
+</style>
+</head>
+<body>
+
+<!-- AUTH -->
+<div id="auth-view">
+  <div class="auth-wrap">
+    <div class="auth-title">
+      <h1>🔔 红包监控</h1>
+      <p>请登录您的 Telegram 账号</p>
+    </div>
+    <div id="auth-err" class="alert alert-err" style="display:none"></div>
+
+    <div id="step-creds" class="step card active">
+      <h2>配置 API 凭证</h2>
+      <p class="sub">从 <a href="https://my.telegram.org" target="_blank" style="color:#60a5fa">my.telegram.org</a> 获取您的 App api_id 和 api_hash</p>
+      <div class="form-row"><label>API ID</label><input id="ai-id" type="text" placeholder="12345678"></div>
+      <div class="form-row"><label>API Hash</label><input id="ai-hash" type="text" placeholder="abcdef1234..."></div>
+      <button class="btn btn-primary" onclick="saveCreds()">下一步</button>
+    </div>
+
+    <div id="step-phone" class="step card">
+      <h2>输入手机号</h2>
+      <p class="sub">请输入绑定 Telegram 的手机号（含国家代码，如 +86 138...）</p>
+      <div class="form-row"><label>手机号</label><input id="ai-phone" type="text" placeholder="+8613800138000" onkeydown="if(event.key==='Enter')sendCode()"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="goStep('creds')">返回</button>
+        <button class="btn btn-primary" onclick="sendCode()">发送验证码</button>
+      </div>
+    </div>
+
+    <div id="step-code" class="step card">
+      <h2>输入验证码</h2>
+      <p class="sub">验证码已发送至您的 Telegram 账号</p>
+      <div class="form-row"><label>验证码</label><input id="ai-code" type="text" placeholder="12345" maxlength="10" onkeydown="if(event.key==='Enter')verifyCode()"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-ghost" onclick="goStep('phone')">返回</button>
+        <button class="btn btn-primary" onclick="verifyCode()">验证</button>
+      </div>
+    </div>
+
+    <div id="step-2fa" class="step card">
+      <h2>两步验证</h2>
+      <div class="form-row"><label>两步验证密码</label><input id="ai-2fa" type="password" placeholder="密码" onkeydown="if(event.key==='Enter')verify2fa()"></div>
+      <button class="btn btn-primary" onclick="verify2fa()">验证</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div id="main-view" style="display:none;flex-direction:column;flex:1;overflow:hidden">
+  <div class="hdr">
+    <div class="hdr-left">
+      <h1>🔔 红包监控</h1>
+      <span class="user-chip" id="user-chip"></span>
+    </div>
+    <div class="hdr-right">
+      <div class="status-badge">
+        <div class="dot off" id="mon-dot"></div>
+        <span id="mon-txt">未运行</span>
+      </div>
+      <button id="mon-btn" class="btn btn-success" onclick="toggleMonitor()">开始监听</button>
+      <button class="btn btn-ghost btn-sm" onclick="doLogout()">退出</button>
+    </div>
+  </div>
+
+  <div class="body">
+    <div class="sidebar">
+      <div class="nav-section">
+        <div class="nav-label">监听配置</div>
+        <div class="nav-item active" data-p="groups" onclick="nav(this)"><span class="nav-icon">📡</span>监听群组</div>
+        <div class="nav-item" data-p="rules" onclick="nav(this)"><span class="nav-icon">🔑</span>关键词规则</div>
+        <div class="nav-item" data-p="click" onclick="nav(this)"><span class="nav-icon">👆</span>自动点击</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">通知</div>
+        <div class="nav-item" data-p="notify" onclick="nav(this)"><span class="nav-icon">🤖</span>通知机器人</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">系统</div>
+        <div class="nav-item" data-p="logs" onclick="nav(this)"><span class="nav-icon">📋</span>运行日志</div>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- Groups -->
+      <div id="panel-groups" class="panel active">
+        <div class="card">
+          <h2>监听群组</h2>
+          <p class="sub">添加需要监听的群组 ID（如 -1001234567890）或 @username。监听到符合条件的消息时触发提醒。</p>
+          <div id="groups-box" class="tag-box"></div>
+          <div class="add-row">
+            <input id="group-in" type="text" placeholder="-1001234567890 或 @username" onkeydown="if(event.key==='Enter')addItem('groups')">
+            <button class="btn btn-primary btn-sm" onclick="addItem('groups')">添加</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>从对话列表选择</h2>
+          <p class="sub">自动获取您账号内的群组和频道，点击添加到监听列表</p>
+          <button class="btn btn-ghost btn-sm" id="fetch-btn" onclick="fetchGroups()">获取群列表</button>
+          <div id="glist-wrap" style="display:none">
+            <div class="glist" id="glist"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rules -->
+      <div id="panel-rules" class="panel">
+        <div class="card">
+          <h2>触发关键词</h2>
+          <p class="sub">消息需<strong style="color:#e5e7eb">同时包含</strong>所有关键词才触发（默认：红包 + /）</p>
+          <div id="kw-box" class="tag-box"></div>
+          <div class="add-row">
+            <input id="kw-in" type="text" placeholder="关键词" onkeydown="if(event.key==='Enter')addItem('kw')">
+            <button class="btn btn-primary btn-sm" onclick="addItem('kw')">添加</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>屏蔽词</h2>
+          <p class="sub">命中任意屏蔽词的消息将被跳过（默认：/1）</p>
+          <div id="block-box" class="tag-box"></div>
+          <div class="add-row">
+            <input id="block-in" type="text" placeholder="屏蔽词" onkeydown="if(event.key==='Enter')addItem('block')">
+            <button class="btn btn-danger btn-sm" onclick="addItem('block')">添加</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Auto-click -->
+      <div id="panel-click" class="panel">
+        <div class="card">
+          <h2>自动点击按钮</h2>
+          <p class="sub">
+            触发提醒后，自动点击第一个<strong style="color:#e5e7eb">按钮文字包含以下关键词</strong>的内联按钮。<br>
+            留空则自动使用触发关键词（当前：<span id="click-kw-preview" style="color:#60a5fa"></span>）
+          </p>
+          <div id="btn-box" class="tag-box"></div>
+          <div class="add-row">
+            <input id="btn-in" type="text" placeholder="按钮关键词，如：抢红包" onkeydown="if(event.key==='Enter')addItem('btn')">
+            <button class="btn btn-success btn-sm" onclick="addItem('btn')">添加</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Notify -->
+      <div id="panel-notify" class="panel">
+        <div class="card">
+          <h2>通知机器人</h2>
+          <p class="sub">监听到符合条件的消息后，通过 Telegram Bot 发送提醒到指定群/频道</p>
+          <div class="form-row">
+            <label>Bot Token（从 @BotFather 获取）</label>
+            <input id="nb-token" type="text" placeholder="1234567890:AABBccDDee...">
+          </div>
+          <div class="form-row">
+            <label>目标群/频道 ID（需将 Bot 加入目标群，如 -1003940233039）</label>
+            <input id="nb-cid" type="text" placeholder="-1003940233039">
+          </div>
+          <button class="btn btn-primary" onclick="saveNotify()">保存</button>
+          <span class="save-msg" id="nb-saved">已保存 ✓</span>
+        </div>
+      </div>
+
+      <!-- Logs -->
+      <div id="panel-logs" class="panel" style="max-width:100%">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:13px;color:#6b7280">实时日志</span>
+          <button class="btn btn-ghost btn-sm" onclick="clearLogs()">清空</button>
+        </div>
+        <div class="log-wrap" id="log-wrap"></div>
+      </div>
+
+    </div><!-- .content -->
+  </div><!-- .body -->
+</div><!-- #main-view -->
+
+<script>
+let cfg = {};
+let isMonitoring = false;
+let ws = null;
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+async function init() {
+  const s = await req('GET', '/api/status');
+  if (!s.has_creds)          return showAuth('creds');
+  if (!s.authenticated)      return showAuth(s.awaiting_2fa ? '2fa' : 'phone');
+  await enterMain(s);
+}
+
+async function enterMain(status) {
+  document.getElementById('auth-view').style.display = 'none';
+  const mv = document.getElementById('main-view');
+  mv.style.display = 'flex';
+  if (status.me) {
+    const n = status.me.name || status.me.username || status.me.phone;
+    document.getElementById('user-chip').textContent = n;
+  }
+  setMonitor(status.monitoring);
+  await loadCfg();
+  connectWs();
+}
+
+function showAuth(step) {
+  document.getElementById('main-view').style.display = 'none';
+  document.getElementById('auth-view').style.display = 'flex';
+  goStep(step);
+}
+
+function goStep(s) {
+  document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+  document.getElementById('step-' + s).classList.add('active');
+  document.getElementById('auth-err').style.display = 'none';
+}
+
+function authErr(msg) {
+  const el = document.getElementById('auth-err');
+  el.textContent = msg; el.style.display = 'block';
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+async function saveCreds() {
+  const id = v('ai-id'), hash = v('ai-hash');
+  if (!id || !hash) return authErr('请填写完整');
+  const r = await req('POST', '/api/auth/credentials', {api_id: id, api_secret: hash});
+  if (r.ok) goStep('phone'); else authErr(r.detail || '保存失败');
+}
+
+async function sendCode() {
+  const phone = v('ai-phone');
+  if (!phone) return authErr('请输入手机号');
+  const r = await req('POST', '/api/auth/send-code', {phone});
+  if (r.ok) goStep('code'); else authErr(r.detail || '发送失败');
+}
+
+async function verifyCode() {
+  const code = v('ai-code');
+  if (!code) return authErr('请输入验证码');
+  const r = await req('POST', '/api/auth/verify-code', {code});
+  if (!r.ok) return authErr(r.detail || '验证失败');
+  if (r.needs_2fa) return goStep('2fa');
+  const s = await req('GET', '/api/status');
+  await enterMain(s);
+}
+
+async function verify2fa() {
+  const pass = v('ai-2fa');
+  const r = await req('POST', '/api/auth/verify-2fa', {password: pass});
+  if (!r.ok) return authErr(r.detail || '密码错误');
+  const s = await req('GET', '/api/status');
+  await enterMain(s);
+}
+
+async function doLogout() {
+  if (!confirm('确定退出登录？')) return;
+  await req('POST', '/api/auth/logout');
+  if (ws) ws.close();
+  init();
+}
+
+// ── Config ────────────────────────────────────────────────────────────────────
+async function loadCfg() {
+  cfg = await req('GET', '/api/config');
+  render('groups-box', cfg.watch_groups || [], 'groups');
+  render('kw-box',     cfg.trigger_keywords || [], 'kw');
+  render('block-box',  cfg.blocked_words || [], 'block');
+  render('btn-box',    cfg.button_texts || [], 'btn');
+  const nb = cfg.notify_bot || {};
+  const kwPreview = document.getElementById('click-kw-preview');
+  if (kwPreview) kwPreview.textContent = (cfg.trigger_keywords || []).join(' + ') || '（未设置）';
+  document.getElementById('nb-token').value = nb.token || '';
+  document.getElementById('nb-cid').value   = nb.target_chat_id || '';
+}
+
+const tagClass = {groups:'tag-group', kw:'tag-kw', block:'tag-block', btn:'tag-btn'};
+
+function render(boxId, items, type) {
+  const box = document.getElementById(boxId);
+  box.innerHTML = '';
+  items.forEach((item, i) => {
+    const t = document.createElement('span');
+    t.className = 'tag ' + tagClass[type];
+    t.innerHTML = esc(item) + ` <span class="tag-x" onclick="removeTag('${type}',${i})">×</span>`;
+    box.appendChild(t);
+  });
+}
+
+async function removeTag(type, i) {
+  const key = cfgKey(type);
+  cfg[key].splice(i, 1);
+  await saveCfgKey(key);
+}
+
+async function addItem(type) {
+  const inId = {groups:'group-in', kw:'kw-in', block:'block-in', btn:'btn-in'};
+  const inp = document.getElementById(inId[type]);
+  const val = inp.value.trim();
+  if (!val) return;
+  const key = cfgKey(type);
+  if (!cfg[key]) cfg[key] = [];
+  cfg[key].push(val);
+  inp.value = '';
+  await saveCfgKey(key);
+}
+
+function cfgKey(type) {
+  return {groups:'watch_groups', kw:'trigger_keywords', block:'blocked_words', btn:'button_texts'}[type];
+}
+
+async function saveCfgKey(key) {
+  await req('PUT', '/api/config', {[key]: cfg[key]});
+  await loadCfg();
+}
+
+async function saveNotify() {
+  const token = v('nb-token'), cid = v('nb-cid');
+  cfg.notify_bot = {token, target_chat_id: cid};
+  await req('PUT', '/api/config', {notify_bot: cfg.notify_bot});
+  const el = document.getElementById('nb-saved');
+  el.style.display = 'inline';
+  setTimeout(() => el.style.display = 'none', 2000);
+}
+
+// ── Group picker ──────────────────────────────────────────────────────────────
+async function fetchGroups() {
+  const btn = document.getElementById('fetch-btn');
+  btn.textContent = '加载中...'; btn.disabled = true;
+  try {
+    const groups = await req('GET', '/api/groups');
+    const list = document.getElementById('glist');
+    list.innerHTML = '';
+    if (!groups.length) {
+      list.innerHTML = '<div class="gitem"><span style="color:#6b7280">没有找到群组</span></div>';
+    } else {
+      groups.forEach(g => {
+        const d = document.createElement('div');
+        d.className = 'gitem';
+        const alreadyIn = (cfg.watch_groups || []).includes(g.id);
+        d.innerHTML = `
+          <div>
+            <div class="gname">${esc(g.name)}</div>
+            <div class="gid">${esc(g.id)}${g.username ? ' · @' + esc(g.username) : ''}</div>
+          </div>
+          <button class="btn btn-ghost btn-xs" ${alreadyIn ? 'disabled' : ''} onclick="quickAdd('${esc(g.id)}', this)">
+            ${alreadyIn ? '已添加' : '添加'}
+          </button>`;
+        list.appendChild(d);
+      });
+    }
+    document.getElementById('glist-wrap').style.display = 'block';
+  } catch(e) {
+    alert('获取失败: ' + e.message);
+  }
+  btn.textContent = '刷新列表'; btn.disabled = false;
+}
+
+async function quickAdd(id, btn) {
+  if (!cfg.watch_groups) cfg.watch_groups = [];
+  if (!cfg.watch_groups.includes(id)) {
+    cfg.watch_groups.push(id);
+    await saveCfgKey('watch_groups');
+    btn.textContent = '已添加'; btn.disabled = true;
+  }
+}
+
+// ── Monitor ───────────────────────────────────────────────────────────────────
+async function toggleMonitor() {
+  if (isMonitoring) {
+    await req('POST', '/api/monitor/stop');
+    setMonitor(false);
+  } else {
+    const r = await req('POST', '/api/monitor/start');
+    if (r.ok) setMonitor(true);
+    else alert(r.detail || '启动失败');
+  }
+}
+
+function setMonitor(on) {
+  isMonitoring = on;
+  document.getElementById('mon-dot').className = 'dot ' + (on ? 'on' : 'off');
+  document.getElementById('mon-txt').textContent = on ? '监听中' : '未运行';
+  const btn = document.getElementById('mon-btn');
+  btn.className = 'btn ' + (on ? 'btn-danger' : 'btn-success');
+  btn.textContent = on ? '停止监听' : '开始监听';
+}
+
+// ── WebSocket logs ────────────────────────────────────────────────────────────
+function connectWs() {
+  if (ws) ws.close();
+  ws = new WebSocket(`ws://${location.host}/ws/logs`);
+  ws.onmessage = e => appendLog(JSON.parse(e.data));
+  ws.onclose = () => setTimeout(connectWs, 3000);
+}
+
+function appendLog(entry) {
+  const wrap = document.getElementById('log-wrap');
+  if (!wrap) return;
+  const d = document.createElement('div');
+  d.className = 'log-row';
+  d.innerHTML = `<span class="lt">${entry.time}</span><span class="l${entry.level[0]}">[${entry.level}]</span> ${esc(entry.msg)}`;
+  wrap.appendChild(d);
+  if (wrap.children.length > 600) wrap.removeChild(wrap.firstChild);
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function clearLogs() { document.getElementById('log-wrap').innerHTML = ''; }
+
+// ── Nav ───────────────────────────────────────────────────────────────────────
+function nav(el) {
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('panel-' + el.dataset.p).classList.add('active');
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function v(id) { return document.getElementById(id).value.trim(); }
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+async function req(method, url, body) {
+  const opts = {method, headers:{'Content-Type':'application/json'}};
+  if (body) opts.body = JSON.stringify(body);
+  try {
+    const r = await fetch(url, opts);
+    const d = await r.json();
+    if (!r.ok) { const e = new Error(d.detail || JSON.stringify(d)); e.data = d; throw e; }
+    return d;
+  } catch(e) {
+    if (e.data) return e.data;
+    throw e;
+  }
+}
+
+init();
+</script>
+</body>
+</html>

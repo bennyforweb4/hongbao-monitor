@@ -1,0 +1,20 @@
+# Telegram session (treat like a password)
+session.session
+session.session-journal
+*.session
+*.session-journal
+
+# Sensitive config (contains API keys, tokens, chat IDs)
+config.json
+config.yaml
+dynamic.json
+
+# Logs & runtime
+*.log
+monitor.pid
+
+# macOS
+.DS_Store
+
+# Claude Code
+.claude/

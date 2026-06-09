@@ -1,0 +1,14 @@
+{
+  "api_id": "YOUR_API_ID",
+  "api_secret": "YOUR_API_HASH",
+  "watch_groups": [
+    "-1001234567890"
+  ],
+  "trigger_keywords": ["红包", "/"],
+  "blocked_words": ["/1"],
+  "button_texts": [],
+  "notify_bot": {
+    "token": "YOUR_BOT_TOKEN",
+    "target_chat_id": "-1009876543210"
+  }
+}
