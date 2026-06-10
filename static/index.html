@@ -238,6 +238,33 @@ input:focus{border-color:#3b82f6}
             <button class="btn btn-success btn-sm" onclick="addItem('btn')">添加</button>
           </div>
         </div>
+
+        <div class="card">
+          <h2>延迟抢红包</h2>
+          <p class="sub">点击按钮前等待 N 秒（0 = 立即点击，范围 0–60）</p>
+          <div style="display:flex;align-items:center;gap:10px">
+            <input id="delay-in" type="number" min="0" max="60" placeholder="0"
+              style="width:90px" oninput="saveDelay()">
+            <span style="font-size:13px;color:#6b7280">秒</span>
+            <span id="delay-saved" class="save-msg">已保存 ✓</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>最低均值过滤</h2>
+          <p class="sub">
+            解析消息中的红包总金额和数量，计算单个均值，低于设定值则跳过不抢。<br>
+            格式：货币 + 最低均值，如 USDT → 1，CNY → 7
+          </p>
+          <div id="minavg-list" style="margin-bottom:10px"></div>
+          <div class="add-row" style="align-items:center">
+            <input id="minavg-cur" type="text" placeholder="货币，如 USDT" style="width:120px"
+              onkeydown="if(event.key==='Enter')addMinAvg()">
+            <input id="minavg-val" type="number" min="0" step="0.01" placeholder="最低均值"
+              onkeydown="if(event.key==='Enter')addMinAvg()">
+            <button class="btn btn-primary btn-sm" onclick="addMinAvg()">添加</button>
+          </div>
+        </div>
       </div>
 
       <!-- Notify -->
@@ -364,6 +391,8 @@ async function loadCfg() {
   const nb = cfg.notify_bot || {};
   const kwPreview = document.getElementById('click-kw-preview');
   if (kwPreview) kwPreview.textContent = (cfg.trigger_keywords || []).join(' + ') || '（未设置）';
+  document.getElementById('delay-in').value = cfg.click_delay ?? 0;
+  renderMinAvg(cfg.min_avg || {});
   document.getElementById('nb-token').value = nb.token || '';
   document.getElementById('nb-cid').value   = nb.target_chat_id || '';
 }
@@ -406,6 +435,53 @@ function cfgKey(type) {
 async function saveCfgKey(key) {
   await req('PUT', '/api/config', {[key]: cfg[key]});
   await loadCfg();
+}
+
+let _delayTimer = null;
+function saveDelay() {
+  clearTimeout(_delayTimer);
+  _delayTimer = setTimeout(async () => {
+    const v = Math.min(60, Math.max(0, parseInt(document.getElementById('delay-in').value) || 0));
+    document.getElementById('delay-in').value = v;
+    await req('PUT', '/api/config', {click_delay: v});
+    cfg.click_delay = v;
+    const el = document.getElementById('delay-saved');
+    el.style.display = 'inline'; setTimeout(() => el.style.display = 'none', 1500);
+  }, 600);
+}
+
+function renderMinAvg(map) {
+  const el = document.getElementById('minavg-list');
+  if (!el) return;
+  el.innerHTML = '';
+  Object.entries(map).forEach(([cur, val]) => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
+    row.innerHTML = `
+      <span style="background:#1e3a5f;color:#93c5fd;padding:3px 10px;border-radius:5px;font-size:13px;min-width:60px;text-align:center">${esc(cur)}</span>
+      <span style="font-size:13px;color:#e5e7eb">≥ ${esc(String(val))}</span>
+      <button class="btn btn-danger btn-xs" onclick="removeMinAvg('${esc(cur)}')">删除</button>`;
+    el.appendChild(row);
+  });
+}
+
+async function addMinAvg() {
+  const cur = document.getElementById('minavg-cur').value.trim().toUpperCase();
+  const val = parseFloat(document.getElementById('minavg-val').value);
+  if (!cur || isNaN(val) || val < 0) return;
+  if (!cfg.min_avg) cfg.min_avg = {};
+  cfg.min_avg[cur] = val;
+  document.getElementById('minavg-cur').value = '';
+  document.getElementById('minavg-val').value = '';
+  await req('PUT', '/api/config', {min_avg: cfg.min_avg});
+  renderMinAvg(cfg.min_avg);
+}
+
+async function removeMinAvg(cur) {
+  if (!cfg.min_avg) return;
+  delete cfg.min_avg[cur];
+  await req('PUT', '/api/config', {min_avg: cfg.min_avg});
+  renderMinAvg(cfg.min_avg);
 }
 
 async function saveNotify() {

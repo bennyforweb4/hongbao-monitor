@@ -36,6 +36,8 @@ DEFAULT_CONFIG = {
     "trigger_keywords": ["红包", "/"],
     "blocked_words": ["/1"],
     "button_texts": [],
+    "min_avg": {},          # e.g. {"USDT": 1.0, "CNY": 7.0}
+    "click_delay": 0,       # seconds to wait before clicking button (0 = immediate)
     "notify_bot": {"token": "", "target_chat_id": ""},
 }
 
@@ -131,7 +133,7 @@ async def is_authed() -> bool:
     try:
         c = await get_client()
         return await c.is_user_authorized()
-    except Exception:
+    except (Exception, asyncio.CancelledError):
         return False
 
 
@@ -142,6 +144,24 @@ _ZW_RE = re.compile(r"[​-‏⁠﻿]")
 def strip_zw(s: str) -> str:
     """Remove zero-width / invisible Unicode characters before text comparison."""
     return _ZW_RE.sub("", s)
+
+# Matches: 总金额:8.88 USDT  /  总金额: 12888 CNY  etc.
+_AMT_RE = re.compile(r"总金额[：:]\s*([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]+)", re.IGNORECASE)
+# Matches: 剩余:2/2  /  剩余: 0/168  etc. — captures the denominator (total envelopes)
+_CNT_RE = re.compile(r"剩余[：:]\s*\d+\s*/\s*(\d+)")
+
+def parse_hongbao_avg(text: str) -> Optional[tuple]:
+    """Return (avg_per_envelope, currency_upper) or None if not parseable."""
+    ma = _AMT_RE.search(text)
+    mc = _CNT_RE.search(text)
+    if not (ma and mc):
+        return None
+    total = float(ma.group(1))
+    currency = ma.group(2).upper()
+    count = int(mc.group(1))
+    if count == 0:
+        return None
+    return total / count, currency
 
 
 # ── Chat matching ──────────────────────────────────────────────────────────────
@@ -247,10 +267,27 @@ async def run_monitor():
             if not all(kw in text for kw in keywords):
                 return
 
-            hit = next((w for w in cfg.get("blocked_words", []) if w.lower() in text.lower()), None)
+            def _match_blocked(w, t):
+                try:
+                    return bool(re.search(w, t, re.IGNORECASE))
+                except re.error:
+                    return w.lower() in t.lower()
+            hit = next((w for w in cfg.get("blocked_words", []) if _match_blocked(w, text)), None)
             if hit:
                 logger.info("屏蔽词 [%s]，跳过", hit)
                 return
+
+            # Min average amount filter
+            min_avg = cfg.get("min_avg") or {}
+            if min_avg:
+                parsed = parse_hongbao_avg(text)
+                if parsed:
+                    avg, currency = parsed
+                    threshold = float(min_avg.get(currency, 0) or 0)
+                    if threshold and avg < threshold:
+                        logger.info("💰 均值 %.4g %s < 最低 %.4g，跳过", avg, currency, threshold)
+                        return
+                    logger.info("💰 均值 %.4g %s，通过过滤", avg, currency)
 
             logger.info("🔔 触发 [%s] %s", group_name, text[:80])
 
@@ -268,7 +305,12 @@ async def run_monitor():
                         btn_clean = strip_zw(btn.text)
                         if any(kw and kw in btn_clean for kw in btn_kws):
                             try:
-                                logger.info("👆 点击按钮: %s", btn.text)
+                                delay = int(cfg.get("click_delay") or 0)
+                                if delay > 0:
+                                    logger.info("⏳ 延迟 %ds 后点击按钮: %s", delay, btn.text)
+                                    await asyncio.sleep(delay)
+                                else:
+                                    logger.info("👆 点击按钮: %s", btn.text)
                                 await event.message.click(text=btn.text)
                                 clicked = True
                             except Exception as e:
@@ -437,13 +479,15 @@ class ConfigBody(BaseModel):
     trigger_keywords: Optional[List[str]] = None
     blocked_words: Optional[List[str]] = None
     button_texts: Optional[List[str]] = None
+    min_avg: Optional[dict] = None
+    click_delay: Optional[int] = None
     notify_bot: Optional[dict] = None
 
 
 @app.put("/api/config")
 async def update_config(body: ConfigBody):
     cfg = load_config()
-    cfg.update({k: v for k, v in body.dict().items() if v is not None})
+    cfg.update({k: v for k, v in body.dict().items() if v is not None or k == "click_delay"})
     save_config(cfg)
     return {"ok": True}
 
