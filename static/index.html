@@ -82,6 +82,7 @@ input:focus{border-color:#3b82f6}
 .alert-ok{background:#001a0a;border:1px solid #14532d;color:#86efac}
 
 /* ── Auth ── */
+#web-login-view{display:none;flex:1;overflow-y:auto;padding:40px 24px;align-items:flex-start;justify-content:center}
 #auth-view{display:none;flex:1;overflow-y:auto;padding:40px 24px;align-items:flex-start;justify-content:center}
 .auth-wrap{width:100%;max-width:420px}
 .auth-title{text-align:center;margin-bottom:32px}
@@ -89,6 +90,20 @@ input:focus{border-color:#3b82f6}
 .auth-title p{color:#6b7280;margin-top:8px;font-size:13px}
 .step{display:none}.step.active{display:block}
 .save-msg{font-size:12px;color:#4ade80;margin-left:10px;display:none}
+
+/* ── Records ── */
+.stats-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.stat-card{background:#161616;border:1px solid #1f2937;border-radius:8px;padding:14px 20px;flex:1;min-width:110px}
+.stat-card .sv{font-size:26px;font-weight:700;color:#fff;margin-bottom:2px}
+.stat-card .sk{font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em}
+.rec-wrap{overflow-x:auto;background:#161616;border:1px solid #1f2937;border-radius:8px}
+.rec-table{width:100%;border-collapse:collapse;font-size:12.5px}
+.rec-table th{text-align:left;padding:8px 12px;color:#6b7280;border-bottom:1px solid #1f2937;font-weight:500;font-size:11px;text-transform:uppercase;white-space:nowrap}
+.rec-table td{padding:8px 12px;border-bottom:1px solid #111;vertical-align:top}
+.rec-table tr:last-child td{border-bottom:none}
+.rec-table tr:hover td{background:#111}
+.rec-ok{color:#4ade80}.rec-err{color:#f87171}.rec-warn{color:#fbbf24}
+.quiz-badge{background:#2d2500;color:#fbbf24;border-radius:4px;padding:2px 6px;font-size:11px;white-space:nowrap}
 
 /* ── Scrollbars ── */
 ::-webkit-scrollbar{width:5px}
@@ -98,6 +113,23 @@ input:focus{border-color:#3b82f6}
 </style>
 </head>
 <body>
+
+<!-- WEB LOGIN -->
+<div id="web-login-view">
+  <div class="auth-wrap">
+    <div class="auth-title">
+      <h1>🔔 红包监控</h1>
+      <p>请输入账户密码登录</p>
+    </div>
+    <div id="web-login-err" class="alert alert-err" style="display:none"></div>
+    <div class="card">
+      <h2>登录</h2>
+      <div class="form-row"><label>用户名</label><input id="wl-user" type="text" placeholder="admin" onkeydown="if(event.key==='Enter')document.getElementById('wl-pass').focus()"></div>
+      <div class="form-row"><label>密码</label><input id="wl-pass" type="password" placeholder="密码" onkeydown="if(event.key==='Enter')webLogin()"></div>
+      <button class="btn btn-primary" onclick="webLogin()">登录</button>
+    </div>
+  </div>
+</div>
 
 <!-- AUTH -->
 <div id="auth-view">
@@ -174,8 +206,13 @@ input:focus{border-color:#3b82f6}
         <div class="nav-item" data-p="notify" onclick="nav(this)"><span class="nav-icon">🤖</span>通知机器人</div>
       </div>
       <div class="nav-section">
+        <div class="nav-label">记录</div>
+        <div class="nav-item" data-p="records" onclick="nav(this)"><span class="nav-icon">🎁</span>抢包记录</div>
+      </div>
+      <div class="nav-section">
         <div class="nav-label">系统</div>
         <div class="nav-item" data-p="logs" onclick="nav(this)"><span class="nav-icon">📋</span>运行日志</div>
+        <div class="nav-item" data-p="security" onclick="nav(this)"><span class="nav-icon">🔐</span>安全设置</div>
       </div>
     </div>
 
@@ -241,13 +278,19 @@ input:focus{border-color:#3b82f6}
 
         <div class="card">
           <h2>延迟抢红包</h2>
-          <p class="sub">点击按钮前等待 N 秒（0 = 立即点击，范围 0–60）</p>
-          <div style="display:flex;align-items:center;gap:10px">
-            <input id="delay-in" type="number" min="0" max="60" placeholder="0"
-              style="width:90px" oninput="saveDelay()">
-            <span style="font-size:13px;color:#6b7280">秒</span>
+          <p class="sub">点击按钮前随机等待，范围 0–60 秒（0 = 立即点击）</p>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font-size:13px;color:#9ca3af">最少</span>
+            <input id="delay-min" type="number" min="0" max="60" step="0.1" placeholder="0"
+              style="width:80px">
+            <span style="font-size:13px;color:#9ca3af">秒 &nbsp;最多</span>
+            <input id="delay-max" type="number" min="0" max="60" step="0.1" placeholder="0"
+              style="width:80px">
+            <span style="font-size:13px;color:#9ca3af">秒</span>
+            <button class="btn btn-primary btn-sm" onclick="saveDelay()">保存</button>
             <span id="delay-saved" class="save-msg">已保存 ✓</span>
           </div>
+          <p style="font-size:11px;color:#4b5563;margin-top:8px">例：最少 1，最多 3 → 每次随机等 1~3 秒</p>
         </div>
 
         <div class="card">
@@ -271,21 +314,59 @@ input:focus{border-color:#3b82f6}
       <div id="panel-notify" class="panel">
         <div class="card">
           <h2>通知机器人</h2>
-          <p class="sub">监听到符合条件的消息后，通过 Telegram Bot 发送提醒到指定群/频道</p>
+          <p class="sub">监听到符合条件的消息后，通过 Telegram Bot 发送提醒；管理员也可私聊机器人发送命令</p>
           <div class="form-row">
             <label>Bot Token（从 @BotFather 获取）</label>
             <input id="nb-token" type="text" placeholder="1234567890:AABBccDDee...">
           </div>
           <div class="form-row">
-            <label>目标群/频道 ID（需将 Bot 加入目标群，如 -1003940233039）</label>
+            <label>通知目标 ID（群/频道/私聊，如 -1003940233039 或 1612187117）</label>
             <input id="nb-cid" type="text" placeholder="-1003940233039">
           </div>
-          <button class="btn btn-primary" onclick="saveNotify()">保存</button>
+          <div class="form-row">
+            <label>管理员用户 ID（私聊机器人可发命令）</label>
+            <input id="nb-admin" type="text" placeholder="1612187117">
+          </div>
+          <button class="btn btn-primary" onclick="saveNotify()">保存并重启机器人</button>
           <span class="save-msg" id="nb-saved">已保存 ✓</span>
         </div>
       </div>
 
+      <!-- Records -->
+      <div id="panel-records" class="panel" style="max-width:100%">
+        <div class="stats-row">
+          <div class="stat-card"><div class="sv" id="stat-total">0</div><div class="sk">总点击</div></div>
+          <div class="stat-card"><div class="sv rec-ok" id="stat-ok">0</div><div class="sk">成功</div></div>
+          <div class="stat-card"><div class="sv rec-err" id="stat-err">0</div><div class="sk">失败/异常</div></div>
+          <div class="stat-card"><div class="sv quiz-badge" id="stat-quiz" style="font-size:18px;background:none;color:#fbbf24">0</div><div class="sk">数学题次数</div></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:13px;color:#6b7280">点击记录（最新 500 条，重启后保留）</span>
+          <button class="btn btn-ghost btn-sm" onclick="clearRecords()">清空记录</button>
+        </div>
+        <div class="rec-wrap">
+          <table class="rec-table">
+            <thead><tr>
+              <th>时间</th><th>群组</th><th>发送人</th><th>按钮</th><th>验证题答案</th><th>弹窗结果</th>
+            </tr></thead>
+            <tbody id="rec-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Logs -->
+      <div id="panel-security" class="panel">
+        <div class="card">
+          <h2>修改登录密码</h2>
+          <p class="sub">修改 Web 控制台的登录用户名和密码</p>
+          <div class="form-row"><label>用户名</label><input id="sec-user" type="text" placeholder="admin"></div>
+          <div class="form-row"><label>新密码</label><input id="sec-pass" type="password" placeholder="新密码"></div>
+          <div class="form-row"><label>确认密码</label><input id="sec-pass2" type="password" placeholder="再次输入新密码"></div>
+          <button class="btn btn-primary" onclick="saveSecConfig()">保存</button>
+          <span id="sec-saved" class="save-msg">已保存 ✓</span>
+        </div>
+      </div>
+
       <div id="panel-logs" class="panel" style="max-width:100%">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <span style="font-size:13px;color:#6b7280">实时日志</span>
@@ -302,13 +383,55 @@ input:focus{border-color:#3b82f6}
 let cfg = {};
 let isMonitoring = false;
 let ws = null;
+let webToken = localStorage.getItem('webToken') || '';
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 async function init() {
+  // Check web session first
+  const ck = await fetch('/api/web/check?token=' + encodeURIComponent(webToken)).then(r => r.json()).catch(() => ({ok: false}));
+  if (!ck.ok) return showWebLogin();
+
   const s = await req('GET', '/api/status');
   if (!s.has_creds)          return showAuth('creds');
   if (!s.authenticated)      return showAuth(s.awaiting_2fa ? '2fa' : 'phone');
   await enterMain(s);
+}
+
+function showWebLogin() {
+  document.getElementById('web-login-view').style.display = 'flex';
+  document.getElementById('auth-view').style.display = 'none';
+  document.getElementById('main-view').style.display = 'none';
+  document.getElementById('web-login-err').style.display = 'none';
+  document.getElementById('wl-user').value = '';
+  document.getElementById('wl-pass').value = '';
+}
+
+async function webLogin() {
+  const username = document.getElementById('wl-user').value.trim();
+  const password = document.getElementById('wl-pass').value;
+  if (!username || !password) {
+    const el = document.getElementById('web-login-err');
+    el.textContent = '请输入用户名和密码'; el.style.display = 'block'; return;
+  }
+  try {
+    const r = await fetch('/api/web/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username, password}),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      const el = document.getElementById('web-login-err');
+      el.textContent = d.detail || '登录失败'; el.style.display = 'block'; return;
+    }
+    webToken = d.token;
+    localStorage.setItem('webToken', webToken);
+    document.getElementById('web-login-view').style.display = 'none';
+    await init();
+  } catch(e) {
+    const el = document.getElementById('web-login-err');
+    el.textContent = '网络错误'; el.style.display = 'block';
+  }
 }
 
 async function enterMain(status) {
@@ -322,6 +445,7 @@ async function enterMain(status) {
   setMonitor(status.monitoring);
   await loadCfg();
   connectWs();
+  loadRecords();
 }
 
 function showAuth(step) {
@@ -377,8 +501,12 @@ async function verify2fa() {
 async function doLogout() {
   if (!confirm('确定退出登录？')) return;
   await req('POST', '/api/auth/logout');
-  if (ws) ws.close();
-  init();
+  await req('POST', '/api/web/logout');
+  if (ws) { ws.close(); ws = null; }
+  if (recWs) { recWs.close(); recWs = null; }
+  webToken = '';
+  localStorage.removeItem('webToken');
+  showWebLogin();
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -391,10 +519,14 @@ async function loadCfg() {
   const nb = cfg.notify_bot || {};
   const kwPreview = document.getElementById('click-kw-preview');
   if (kwPreview) kwPreview.textContent = (cfg.trigger_keywords || []).join(' + ') || '（未设置）';
-  document.getElementById('delay-in').value = cfg.click_delay ?? 0;
+  document.getElementById('delay-min').value = cfg.click_delay_min ?? cfg.click_delay ?? 0;
+  document.getElementById('delay-max').value = cfg.click_delay_max ?? cfg.click_delay ?? 0;
   renderMinAvg(cfg.min_avg || {});
   document.getElementById('nb-token').value = nb.token || '';
   document.getElementById('nb-cid').value   = nb.target_chat_id || '';
+  document.getElementById('nb-admin').value  = nb.admin_id || '';
+  const secUser = document.getElementById('sec-user');
+  if (secUser) secUser.value = cfg.web_username || 'admin';
 }
 
 const tagClass = {groups:'tag-group', kw:'tag-kw', block:'tag-block', btn:'tag-btn'};
@@ -437,17 +569,16 @@ async function saveCfgKey(key) {
   await loadCfg();
 }
 
-let _delayTimer = null;
-function saveDelay() {
-  clearTimeout(_delayTimer);
-  _delayTimer = setTimeout(async () => {
-    const v = Math.min(60, Math.max(0, parseInt(document.getElementById('delay-in').value) || 0));
-    document.getElementById('delay-in').value = v;
-    await req('PUT', '/api/config', {click_delay: v});
-    cfg.click_delay = v;
-    const el = document.getElementById('delay-saved');
-    el.style.display = 'inline'; setTimeout(() => el.style.display = 'none', 1500);
-  }, 600);
+async function saveDelay() {
+  const dmin = Math.min(60, Math.max(0, parseFloat(document.getElementById('delay-min').value) || 0));
+  const dmax = Math.min(60, Math.max(0, parseFloat(document.getElementById('delay-max').value) || 0));
+  document.getElementById('delay-min').value = dmin;
+  document.getElementById('delay-max').value = Math.max(dmin, dmax);
+  await req('PUT', '/api/config', {click_delay_min: dmin, click_delay_max: Math.max(dmin, dmax)});
+  cfg.click_delay_min = dmin;
+  cfg.click_delay_max = Math.max(dmin, dmax);
+  const el = document.getElementById('delay-saved');
+  el.style.display = 'inline'; setTimeout(() => el.style.display = 'none', 1500);
 }
 
 function renderMinAvg(map) {
@@ -485,9 +616,10 @@ async function removeMinAvg(cur) {
 }
 
 async function saveNotify() {
-  const token = v('nb-token'), cid = v('nb-cid');
-  cfg.notify_bot = {token, target_chat_id: cid};
+  const token = v('nb-token'), cid = v('nb-cid'), admin_id = v('nb-admin');
+  cfg.notify_bot = {token, target_chat_id: cid, admin_id};
   await req('PUT', '/api/config', {notify_bot: cfg.notify_bot});
+  await req('POST', '/api/bot/restart');
   const el = document.getElementById('nb-saved');
   el.style.display = 'inline';
   setTimeout(() => el.style.display = 'none', 2000);
@@ -559,9 +691,9 @@ function setMonitor(on) {
 // ── WebSocket logs ────────────────────────────────────────────────────────────
 function connectWs() {
   if (ws) ws.close();
-  ws = new WebSocket(`ws://${location.host}/ws/logs`);
+  ws = new WebSocket(`ws://${location.host}/ws/logs?token=${encodeURIComponent(webToken)}`);
   ws.onmessage = e => appendLog(JSON.parse(e.data));
-  ws.onclose = () => setTimeout(connectWs, 3000);
+  ws.onclose = () => { if (webToken) setTimeout(connectWs, 3000); };
 }
 
 function appendLog(entry) {
@@ -590,10 +722,11 @@ function v(id) { return document.getElementById(id).value.trim(); }
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 async function req(method, url, body) {
-  const opts = {method, headers:{'Content-Type':'application/json'}};
+  const opts = {method, headers:{'Content-Type':'application/json','X-Token':webToken}};
   if (body) opts.body = JSON.stringify(body);
   try {
     const r = await fetch(url, opts);
+    if (r.status === 401) { showWebLogin(); return {}; }
     const d = await r.json();
     if (!r.ok) { const e = new Error(d.detail || JSON.stringify(d)); e.data = d; throw e; }
     return d;
@@ -601,6 +734,96 @@ async function req(method, url, body) {
     if (e.data) return e.data;
     throw e;
   }
+}
+
+// ── Records ───────────────────────────────────────────────────────────────────
+let recWs = null;
+let allRecords = [];
+
+async function loadRecords() {
+  try {
+    allRecords = await req('GET', '/api/records') || [];
+    renderAllRecords();
+    connectRecordsWs();
+  } catch(e) {}
+}
+
+function renderAllRecords() {
+  const tbody = document.getElementById('rec-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  allRecords.forEach(r => tbody.appendChild(makeRecRow(r)));
+  updateRecStats();
+}
+
+function makeRecRow(r) {
+  const tr = document.createElement('tr');
+  const t = (r.time || '').replace('T', ' ').slice(0, 19);
+  const quiz = r.quiz_answer
+    ? `<span class="quiz-badge">🧮 ${esc(r.quiz_answer)}</span>`
+    : '<span style="color:#374151">—</span>';
+  const result = r.result ? esc(r.result.slice(0, 100)) : '—';
+  const rc = recResultClass(r);
+  tr.innerHTML = `
+    <td style="color:#6b7280;white-space:nowrap">${esc(t)}</td>
+    <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.group||'—')}</td>
+    <td style="color:#9ca3af;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.sender||'—')}</td>
+    <td><code style="background:#1f2937;padding:2px 6px;border-radius:4px;font-size:12px">${esc(r.button||'—')}</code></td>
+    <td>${quiz}</td>
+    <td class="${rc}" style="max-width:220px">${result}</td>`;
+  return tr;
+}
+
+function recResultClass(r) {
+  if (r.error) return 'rec-err';
+  const s = (r.result || '');
+  if (/恭喜|成功|领取|获得/.test(s)) return 'rec-ok';
+  if (/失败|错误|手慢|已领|结束|过期/.test(s)) return 'rec-err';
+  return 'rec-warn';
+}
+
+function updateRecStats() {
+  const total = allRecords.length;
+  const errs = allRecords.filter(r => r.error || /失败|错误|手慢|已领|结束|过期/.test(r.result||'')).length;
+  const quizzes = allRecords.filter(r => r.quiz_answer).length;
+  document.getElementById('stat-total').textContent = total;
+  document.getElementById('stat-ok').textContent = total - errs;
+  document.getElementById('stat-err').textContent = errs;
+  document.getElementById('stat-quiz').textContent = quizzes;
+}
+
+function connectRecordsWs() {
+  if (recWs) return;
+  recWs = new WebSocket(`ws://${location.host}/ws/records?token=${encodeURIComponent(webToken)}`);
+  recWs.onmessage = e => {
+    const r = JSON.parse(e.data);
+    allRecords.unshift(r);
+    const tbody = document.getElementById('rec-tbody');
+    if (tbody) tbody.insertBefore(makeRecRow(r), tbody.firstChild);
+    updateRecStats();
+  };
+  recWs.onclose = () => { recWs = null; if (webToken) setTimeout(connectRecordsWs, 3000); };
+}
+
+async function saveSecConfig() {
+  const user = document.getElementById('sec-user').value.trim();
+  const pass = document.getElementById('sec-pass').value;
+  const pass2 = document.getElementById('sec-pass2').value;
+  if (!user) return alert('用户名不能为空');
+  if (!pass) return alert('密码不能为空');
+  if (pass !== pass2) return alert('两次密码不一致');
+  await req('PUT', '/api/config', {web_username: user, web_password: pass});
+  document.getElementById('sec-pass').value = '';
+  document.getElementById('sec-pass2').value = '';
+  const el = document.getElementById('sec-saved');
+  el.style.display = 'inline'; setTimeout(() => el.style.display = 'none', 1500);
+}
+
+async function clearRecords() {
+  if (!confirm('确定清空所有抢红包记录？')) return;
+  await req('DELETE', '/api/records');
+  allRecords = [];
+  renderAllRecords();
 }
 
 init();
