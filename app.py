@@ -950,6 +950,7 @@ async def on_startup():
     threading.Thread(target=_open, daemon=True).start()
     logger.info("Web 控制台: http://localhost:8888")
     asyncio.create_task(_start_bot_poll_soon())
+    asyncio.create_task(_start_monitor_soon())
 
 
 async def _start_bot_poll_soon():
@@ -957,6 +958,17 @@ async def _start_bot_poll_soon():
     await asyncio.sleep(2)
     if _bot_poll_task is None or _bot_poll_task.done():
         _bot_poll_task = asyncio.create_task(run_bot_poll())
+
+
+async def _start_monitor_soon():
+    global _monitor_task
+    await asyncio.sleep(3)
+    if await is_authed():
+        if _monitor_task is None or _monitor_task.done():
+            _monitor_task = asyncio.create_task(run_monitor())
+            logger.info("🚀 监听已自动启动")
+    else:
+        logger.warning("⚠️ Telegram 未登录，跳过自动启动监听")
 
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
