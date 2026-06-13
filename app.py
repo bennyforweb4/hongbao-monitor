@@ -861,7 +861,14 @@ async def run_monitor():
                 return
 
             cfg = load_config()
-            chat = await event.get_chat()
+            # get_chat() may call iter_dialogs() if entity not cached, which can
+            # fail during Telegram flood waits — use cached event.chat first.
+            chat = event.chat
+            if chat is None:
+                try:
+                    chat = await event.get_chat()
+                except Exception:
+                    return
             if not is_watched(chat, cfg):
                 return
 
