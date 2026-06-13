@@ -237,10 +237,30 @@ def strip_zw(s: str) -> str:
 
 # Matches: 总金额:8.88 USDT  /  总金额: 12888 CNY  etc.
 _AMT_RE = re.compile(r"总金额[：:]\s*([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]+)", re.IGNORECASE)
-# Matches: 剩余:2/2  /  剩余: 0/168  etc. — captures the denominator (total envelopes)
-_CNT_RE = re.compile(r"剩余[：:]\s*\d+\s*/\s*(\d+)")
+# Matches: 剩余2/2  /  剩余:2/2  /  剩余: 0/168  etc. — captures the denominator (total envelopes)
+_CNT_RE = re.compile(r"剩余[：:]?\s*\d+\s*/\s*(\d+)")
 
-# Math quiz: "2 + 10 = ?" / "３×４＝？" etc.
+# Circled/enclosed digit → ASCII digit mapping
+# Covers ①-⑩ (U+2460), ❶-❿ (U+2776), ➀-➉ (U+2780), ➊-➓ (U+278A)
+_CIRCLED_DIGIT_MAP: dict = {}
+for _i, _c in enumerate('①②③④⑤⑥⑦⑧⑨⑩', 1):
+    _CIRCLED_DIGIT_MAP[_c] = str(_i)
+for _i, _c in enumerate('❶❷❸❹❺❻❼❽❾❿', 1):
+    _CIRCLED_DIGIT_MAP[_c] = str(_i)
+for _i, _c in enumerate('➀➁➂➃➄➅➆➇➈➉', 1):
+    _CIRCLED_DIGIT_MAP[_c] = str(_i)
+for _i, _c in enumerate('➊➋➌➍➎➏➐➑➒➓', 1):
+    _CIRCLED_DIGIT_MAP[_c] = str(_i)
+# Fullwidth digits ０-９ → 0-9
+for _i, _c in enumerate('０１２３４５６７８９'):
+    _CIRCLED_DIGIT_MAP[_c] = str(_i)
+
+def _normalize_digits(text: str) -> str:
+    """Replace circled/fullwidth digit chars with ASCII equivalents."""
+    return ''.join(_CIRCLED_DIGIT_MAP.get(c, c) for c in text)
+
+
+# Math quiz: "2 + 10 = ?" / "３×４＝？" / "❶ + ❽ = ？" etc.
 _QUIZ_RE = re.compile(
     r'(\d+(?:\.\d+)?)\s*([+\-×÷*/＋－×÷])\s*(\d+(?:\.\d+)?)\s*[=＝]\s*[\?？]',
     re.UNICODE,
@@ -253,6 +273,7 @@ _QUIZ_OPS = {
 }
 
 def solve_quiz(text: str) -> Optional[str]:
+    text = _normalize_digits(text)
     m = _QUIZ_RE.search(text)
     if not m:
         return None
@@ -300,6 +321,87 @@ def parse_hongbao_avg(text: str) -> Optional[tuple]:
     if count == 0:
         return None
     return total / count, currency
+
+
+# Pattern for Telegram bot deep-link buttons: https://t.me/BOT?start=PARAM
+_TG_START_RE = re.compile(r'https://t\.me/(\w+)\?start=(.+)', re.IGNORECASE)
+
+
+async def claim_via_url_bot(client, btn_url: str, group_name: str,
+                             sender_name: str, text_preview: str) -> tuple:
+    """
+    Handle a URL button that deep-links into a bot for claiming.
+    Flow: send /start PARAM → bot sends quiz → solve → click answer button
+          (or send text answer if no buttons).
+    Returns (popup_text, error_string). One of them will be None.
+    """
+    m = _TG_START_RE.match(btn_url)
+    if not m:
+        return None, f"URL格式不识别: {btn_url[:60]}"
+    bot_username = m.group(1)
+    start_param = m.group(2)
+    logger.info("🤖 跳转私聊 @%s，start=%s", bot_username, start_param)
+    try:
+        async with client.conversation(bot_username, timeout=30, exclusive=False) as conv:
+            await conv.send_message(f'/start {start_param}')
+            resp = await conv.get_response()
+            resp_text = resp.text or ""
+            resp_btns = resp.buttons or []
+            all_btn_texts = [b.text for row in resp_btns for b in row]
+            logger.info("🤖 Bot回复: %s | 按钮: %s", resp_text[:120], all_btn_texts)
+
+            quiz_ans = solve_quiz(resp_text)
+            target_btn = None
+
+            # Math quiz matched to a button
+            if quiz_ans:
+                for row in resp_btns:
+                    for btn in row:
+                        if _normalize_digits(strip_zw(btn.text).strip()) == quiz_ans:
+                            target_btn = btn
+                            break
+                    if target_btn:
+                        break
+
+            # Letter captcha
+            if target_btn is None:
+                letter = find_letter_captcha(resp_text, all_btn_texts)
+                if letter:
+                    for row in resp_btns:
+                        for btn in row:
+                            if btn.text == letter:
+                                target_btn = btn
+                                break
+                        if target_btn:
+                            break
+
+            if target_btn:
+                logger.info("👆 点击Bot答题按钮: %s", target_btn.text)
+                cb = await target_btn.click()
+                popup = getattr(cb, 'message', '') or ''
+                logger.info("✅ Bot答题完成: %s", popup)
+                return popup, None
+
+            if quiz_ans:
+                # No matching button — send text answer directly
+                logger.info("💬 发送文字答案到Bot: %s", quiz_ans)
+                await conv.send_message(quiz_ans)
+                try:
+                    confirm = await asyncio.wait_for(conv.get_response(), timeout=15)
+                    popup = confirm.text or ""
+                    logger.info("✅ Bot文字答题完成: %s", popup[:80])
+                    return popup, None
+                except asyncio.TimeoutError:
+                    return None, "等待Bot确认超时"
+
+            logger.warning("⚠️ 无法识别Bot题目，完整消息:\n%s", resp_text)
+            return None, f"无法识别题目: {resp_text[:80]}"
+
+    except asyncio.TimeoutError:
+        return None, "Bot超时无响应(30s)"
+    except Exception as e:
+        logger.error("claim_via_url_bot 异常: %s", e)
+        return None, str(e)
 
 
 # ── Chat matching ──────────────────────────────────────────────────────────────
@@ -693,7 +795,7 @@ async def poll_unlock(client, chat_id: int, msg_id: int,
             if quiz_answer:
                 for row in msg.buttons:
                     for btn in row:
-                        if strip_zw(btn.text).strip() == quiz_answer:
+                        if _normalize_digits(strip_zw(btn.text).strip()) == quiz_answer:
                             target_btn = btn
                             break
                     if target_btn:
@@ -796,7 +898,8 @@ async def run_monitor():
                 logger.info("屏蔽词 [%s]，跳过", hit)
                 return
 
-            # Min average amount filter
+            # Min average amount filter — below threshold: alert but don't click
+            auto_click = True
             min_avg = cfg.get("min_avg") or {}
             if min_avg:
                 parsed = parse_hongbao_avg(text)
@@ -804,9 +907,13 @@ async def run_monitor():
                     avg, currency = parsed
                     threshold = float(min_avg.get(currency, 0) or 0)
                     if threshold and avg < threshold:
-                        logger.info("💰 均值 %.4g %s < 最低 %.4g，跳过", avg, currency, threshold)
-                        return
-                    logger.info("💰 均值 %.4g %s，通过过滤", avg, currency)
+                        logger.info("💰 均值 %.4g %s < 最低 %.4g，仅报警不点击", avg, currency, threshold)
+                        auto_click = False
+                    else:
+                        logger.info("💰 均值 %.4g %s，通过过滤", avg, currency)
+                else:
+                    logger.info("💰 无法解析金额，已设最低均值，仅报警不点击")
+                    auto_click = False
 
             logger.info("🔔 触发 [%s] %s", group_name, text[:80])
 
@@ -816,7 +923,9 @@ async def run_monitor():
             # Full detail log (hongbao.log)
             _log_hongbao(group_name, sender_name, event.message.id, text, raw_buttons)
             quiz_answer = solve_quiz(text)
-            if raw_buttons is None:
+            if not auto_click:
+                logger.info("⏩ 金额不达标，跳过自动点击")
+            elif raw_buttons is None:
                 logger.info("📋 消息无内联按钮，跳过点击")
             else:
                 all_btn_texts = [btn.text for row in raw_buttons for btn in row]
@@ -833,7 +942,7 @@ async def run_monitor():
                     logger.info("🧮 检测到数学题，答案: %s", quiz_answer)
                     for row in raw_buttons:
                         for btn in row:
-                            if strip_zw(btn.text).strip() == quiz_answer:
+                            if _normalize_digits(strip_zw(btn.text).strip()) == quiz_answer:
                                 target_btn = btn
                                 break
                         if target_btn:
@@ -879,6 +988,8 @@ async def run_monitor():
                             break
 
                 if target_btn is not None:
+                    btn_url = getattr(target_btn, 'url', None) or ''
+                    is_url_claim = bool(_TG_START_RE.match(btn_url))
                     is_unlock = "解锁" in target_btn.text
                     d_min = float(cfg.get("click_delay_min") or cfg.get("click_delay") or 0)
                     d_max = float(cfg.get("click_delay_max") or d_min)
@@ -886,17 +997,27 @@ async def run_monitor():
                         d_max = d_min
                     import random as _random
                     delay = _random.uniform(d_min, d_max) if d_min > 0 or d_max > 0 else 0
-                    if delay > 0 and not is_unlock:
+                    if delay > 0 and not is_unlock and not is_url_claim:
                         logger.info("⏳ 随机延迟 %.1fs 后点击: %s", delay, target_btn.text)
                         await asyncio.sleep(delay)
                     else:
-                        logger.info("👆 点击按钮: %s%s", target_btn.text,
-                                    " → 启动解锁轮询" if is_unlock else "")
+                        suffix = " → 解锁轮询" if is_unlock else (" → URL私聊Bot" if is_url_claim else "")
+                        logger.info("👆 点击按钮: %s%s", target_btn.text, suffix)
                     popup, click_error = "", False
                     try:
-                        cb = await target_btn.click()
-                        popup = getattr(cb, 'message', '') or ''
-                        logger.info("✅ 点击完成，弹窗: %s", popup)
+                        if is_url_claim:
+                            popup, err = await claim_via_url_bot(
+                                c, btn_url, group_name, sender_name, text[:100])
+                            if err:
+                                click_error = True
+                                popup = err
+                                logger.error("❌ URL认领失败: %s", err)
+                            else:
+                                logger.info("✅ URL认领完成: %s", popup)
+                        else:
+                            cb = await target_btn.click()
+                            popup = getattr(cb, 'message', '') or ''
+                            logger.info("✅ 点击完成，弹窗: %s", popup)
                     except Exception as e:
                         popup = str(e)
                         click_error = True
